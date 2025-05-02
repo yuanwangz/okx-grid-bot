@@ -12,8 +12,11 @@
     *   最大仓位比例限制 (`MAX_POSITION_RATIO`)
 *   **Web 用户界面**: 提供一个简单的 Web 界面 (通过 `web_server.py`)，用于实时监控交易状态、账户信息、订单和调整配置。
 *   **状态持久化**: 将交易状态保存到 `data/` 目录下的 JSON 文件中，以便重启后恢复。
-*   **通知推送**: 可通过 PushPlus 发送重要事件和错误通知 (`PUSHPLUS_TOKEN`)。
+*   **通知推送**: 
+    *   支持PushPlus通知 (`PUSHPLUS_TOKEN`)
+    *   支持Telegram Bot通知 (`TELEGRAM_BOT_TOKEN`)
 *   **日志记录**: 详细的运行日志记录在 `trading_system.log` 文件中。
+*   **自动构建**: 通过GitHub Actions自动构建并推送Docker镜像
 
 ## 环境要求
 
@@ -67,6 +70,13 @@
 
     # PushPlus Token (可选, 用于消息推送)
     PUSHPLUS_TOKEN=YOUR_PUSHPLUS_TOKEN
+    
+    # Telegram Bot配置 (可选, 用于Telegram消息推送)
+    # 从BotFather获取Token: https://t.me/BotFather
+    TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+    # 你的用户ID或群组ID(需先与机器人私聊一次)
+    # 可以使用 @userinfobot 机器人获取你的ID
+    TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
 
     # 初始设置 (可选, 影响首次运行和统计)
     # 如不设置，INITIAL_PRINCIPAL 和 INITIAL_BASE_PRICE 默认为 0
@@ -75,7 +85,17 @@
     ```
     *   **重要**: 确保你的OKX API Key 具有现货交易权限，但**不要**开启提现权限。
 
-3.  **调整交易参数 (可选)**:
+3.  **设置通知方式**:
+    * **PushPlus**: 访问 [PushPlus官网](https://www.pushplus.plus/) 注册并获取 Token。
+    * **Telegram Bot**: 
+        1. 在Telegram中搜索 [@BotFather](https://t.me/BotFather) 并发送 `/newbot` 创建新机器人
+        2. 按提示设置机器人名称和用户名
+        3. 获取API Token并填入 `TELEGRAM_BOT_TOKEN`
+        4. 在Telegram中与你的机器人发起对话 (需先点击"Start"按钮)
+        5. 使用 [@userinfobot](https://t.me/userinfobot) 获取你的用户ID并填入 `TELEGRAM_CHAT_ID`
+        6. 如需发送到群组，先将机器人添加到群组，然后发送 `/my_id@userinfobot` 获取群组ID
+
+4.  **调整交易参数 (可选)**:
     你可以根据自己的策略需求修改 `config.py` 文件中的参数，例如：
     *   `BASE_SYMBOL` : 'OKB'  # 基础币种
     *   `QUOTE_SYMBOL` : 'USDT'  # 计价币种
@@ -95,8 +115,32 @@ python main.py
 
 程序启动后将开始连接交易所、初始化状态并执行交易逻辑。
 
+## 部署方式
 
-## docker部署
+### 使用Docker部署
+
+有两种方式可以使用Docker部署本项目：
+
+#### 使用预构建的GitHub容器镜像
+
+```bash
+# 拉取代码（用于配置.env文件）
+git clone https://github.com/tingxifa/okx-grid-bot
+cd okx-grid-bot
+
+# 创建并配置.env文件
+# 拉取GitHub自动构建的镜像
+docker pull ghcr.io/tingxifa/okx-grid-bot:latest
+
+# 运行容器
+docker run -d --name okx-grid-bot \
+  -p 58080:58080 \
+  -v $(pwd)/.env:/app/.env \
+  -v $(pwd)/data:/app/data \
+  ghcr.io/tingxifa/okx-grid-bot:latest
+```
+
+#### 使用docker-compose本地构建
 
 部署前请先根据上文说明配置好 .env 文件的环境变量。
 

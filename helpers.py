@@ -1,11 +1,12 @@
 import logging
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
-from config import PUSHPLUS_TOKEN
+from config import PUSHPLUS_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 import time
 import psutil
 import os
 from logging.handlers import TimedRotatingFileHandler
+import asyncio
 
 def format_trade_message(side, symbol, price, amount, total, grid_size, retry_count=None):
     """格式化交易消息为美观的文本格式
@@ -69,6 +70,64 @@ def send_pushplus_message(content, title="交易信号通知"):
             logging.error(f"消息推送失败: 状态码={response.status_code}, 响应={response_json}")
     except Exception as e:
         logging.error(f"消息推送异常: {str(e)}", exc_info=True)
+
+async def send_telegram_message(content, title=None):
+    """发送Telegram通知
+    
+    Args:
+        content (str): 通知内容
+        title (str): 通知标题，可选
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.error("未配置TELEGRAM_BOT_TOKEN或TELEGRAM_CHAT_ID，无法发送Telegram通知")
+        return
+    
+    message_text = f"*{title}*\n\n{content}" if title else content
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message_text,
+        "parse_mode": "Markdown"
+    }
+    
+    try:
+        logging.info(f"正在发送Telegram通知: {title if title else '无标题'}")
+        response = requests.post(url, json=data)
+        response_json = response.json()
+        
+        if response.status_code == 200 and response_json.get('ok'):
+            logging.info(f"Telegram消息发送成功")
+        else:
+            logging.error(f"Telegram消息发送失败: 状态码={response.status_code}, 响应={response_json}")
+    except Exception as e:
+        logging.error(f"Telegram消息发送异常: {str(e)}", exc_info=True)
+
+async def send_notification(content, title="交易信号通知"):
+    """统一通知接口，根据配置选择通知方式
+    
+    Args:
+        content (str): 通知内容
+        title (str): 通知标题
+    """
+    # 创建任务列表
+    tasks = []
+    
+    # 添加PushPlus通知任务
+    if PUSHPLUS_TOKEN:
+        tasks.append(asyncio.to_thread(send_pushplus_message, content, title))
+    
+    # 添加Telegram通知任务
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        tasks.append(send_telegram_message(content, title))
+    
+    # 如果没有配置任何通知方式，只记录日志
+    if not tasks:
+        logging.warning("未配置任何通知方式，消息仅记录到日志")
+        logging.info(f"[通知] {title}: {content}")
+        return
+    
+    # 并行执行所有通知任务
+    await asyncio.gather(*tasks)
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def safe_fetch(method, *args, **kwargs):

@@ -4,7 +4,7 @@ import traceback
 import platform
 import sys
 from trader import GridTrader
-from helpers import LogConfig, send_pushplus_message
+from helpers import LogConfig, send_notification
 from web_server import start_web_server
 from exchange_client import ExchangeClient
 from config import TradingConfig
@@ -47,7 +47,7 @@ async def main():
     except Exception as e:
         error_msg = f"启动失败: {str(e)}\n{traceback.format_exc()}"
         logging.error(error_msg)
-        send_pushplus_message(error_msg, "致命错误")
+        send_notification(error_msg, "致命错误")
         
     finally:
         if 'trader' in locals():

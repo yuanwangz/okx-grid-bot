@@ -8,7 +8,7 @@ import numpy as np
 from datetime import datetime
 import time
 import math
-from helpers import send_pushplus_message, format_trade_message
+from helpers import send_notification, format_trade_message
 import json
 from monitor import TradingMonitor
 from position_controller_s1 import PositionControllerS1
@@ -101,7 +101,7 @@ class GridTrader:
             
             # 发送启动通知
             threshold = FLIP_THRESHOLD(self.grid_size)  # 计算实际阈值
-            send_pushplus_message(
+            send_notification(
                 f"网格交易启动成功\n"
                 f"交易对: {self.config.SYMBOL}\n"
                 f"基准价: {self.base_price} USDT\n"
@@ -155,7 +155,7 @@ class GridTrader:
             self.initialized = False
             self.logger.error(f"初始化失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
             # 发送错误通知
-            send_pushplus_message(
+            send_notification(
                 f"网格交易启动失败\n"
                 f"错误信息: {str(e)}",
                 "错误通知"
@@ -440,11 +440,11 @@ class GridTrader:
             open_orders = await self.exchange.fetch_open_orders(self.config.SYMBOL)
             for order in open_orders:
                 await self.exchange.cancel_order(order['id'])
-            send_pushplus_message("程序紧急停止", "系统通知")
+            send_notification("程序紧急停止", "系统通知")
             self.logger.critical("所有交易已停止，进入复盘程序")
         except Exception as e:
             self.logger.error(f"紧急停止失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
-            send_pushplus_message(f"程序异常停止: {str(e)}", "错误通知")
+            send_notification(f"程序异常停止: {str(e)}", "错误通知")
         finally:
             await self.exchange.close()
             exit()
@@ -573,7 +573,7 @@ class GridTrader:
                         retry_count=(retry_count + 1, max_retries)
                     )
                     
-                    send_pushplus_message(message, "交易成功通知")
+                    send_notification(message, "交易成功通知")
                     
                     # 交易完成后，检查并转移多余资金到理财
                     await self._transfer_excess_funds()
@@ -625,7 +625,7 @@ class GridTrader:
                                 retry_count=(retry_count + 1, max_retries)
                             )
                             
-                            send_pushplus_message(message, "交易成功通知")
+                            send_notification(message, "交易成功通知")
                             
                             # 交易完成后，检查并转移多余资金到理财
                             await self._transfer_excess_funds()
@@ -671,7 +671,7 @@ class GridTrader:
 📊 交易对: {self.config.SYMBOL}
 ⚠️ 错误: 资金不足
 """
-                    send_pushplus_message(error_message, "交易错误通知")
+                    send_notification(error_message, "交易错误通知")
                     return False
                 
                 # 如果还有重试次数，稍等后继续
@@ -688,7 +688,7 @@ class GridTrader:
 📊 交易对: {self.config.SYMBOL}
 ⚠️ 错误: 达到最大重试次数 {max_retries} 次
 """
-            send_pushplus_message(error_message, "交易错误通知")
+            send_notification(error_message, "交易错误通知")
         
         return False
 
@@ -782,7 +782,7 @@ class GridTrader:
                 total=total,
                 grid_size=self.grid_size
             )
-            send_pushplus_message(message, "交易执行通知")
+            send_notification(message, "交易执行通知")
         except Exception as e:
             self.logger.error(f"记录订单失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
 
@@ -835,7 +835,7 @@ class GridTrader:
                             if active_id == order_id:
                                 self.active_orders[side] = None
                         # 发送成交通知
-                        send_pushplus_message(
+                        send_notification(
                             f"OKB {{'买入' if side == 'buy' else '卖出'}}单成交\\n"
                             f"价格: {order['price']} USDT"
                         )
@@ -1522,7 +1522,7 @@ class GridTrader:
                            f"现货余额: {spot_usdt:.2f}\\n理财余额: {funding_usdt:.2f}\\n" \
                            f"缺口: {amount_usdt - (spot_usdt + funding_usdt):.2f}"
                 self.logger.error(f"买入资金不足: 现货+理财总额不足以执行交易")
-                send_pushplus_message(error_msg, "资金不足警告")
+                send_notification(error_msg, "资金不足警告")
                 return False
                 
             # 计算需要赎回的金额（增加5%缓冲）
@@ -1552,12 +1552,12 @@ class GridTrader:
             else:
                 error_msg = f"资金赎回后仍不足\\n交易类型: 买入\\n所需USDT: {amount_usdt:.2f}\\n现货余额: {new_usdt:.2f}"
                 self.logger.error(error_msg)
-                send_pushplus_message(error_msg, "资金不足警告")
+                send_notification(error_msg, "资金不足警告")
                 return False
                 
         except Exception as e:
             self.logger.error(f"检查买入余额失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
-            send_pushplus_message(f"余额检查错误\\n交易类型: 买入\\n错误信息: {str(e)}", "系统错误")
+            send_notification(f"余额检查错误\\n交易类型: 买入\\n错误信息: {str(e)}", "系统错误")
             return False
             
     async def check_sell_balance(self):
@@ -1594,7 +1594,7 @@ class GridTrader:
                     # 发送资金不足通知
                     error_msg = f"资金不足通知\\n交易类型: 卖出\\n所需{self.symbol_info['base']}: {coin_needed:.8f}\\n" \
                                f"现货余额: {spot_okb:.8f}\\n理财余额: {funding_okb:.8f}"
-                    send_pushplus_message(error_msg, "余额不足")
+                    send_notification(error_msg, "余额不足")
                     return False
                 
                 # 计算需要从理财赎回的数量，考虑手续费和划转最低限额
@@ -1626,7 +1626,7 @@ class GridTrader:
                         return True
                     else:
                         error_msg = f"资金赎回后仍不足\\n交易类型: 卖出\\n所需{self.symbol_info['base']}: {coin_needed:.8f}\\n现货余额: {new_okb:.8f}"
-                        send_pushplus_message(error_msg, "余额不足")
+                        send_notification(error_msg, "余额不足")
                         return False
                 except Exception as e:
                     self.logger.error(f"从理财赎回{self.symbol_info['base']}失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
@@ -1660,7 +1660,7 @@ class GridTrader:
                 retry_count=retry_count
             )
             
-            send_pushplus_message(message, "交易执行通知")
+            send_notification(message, "交易执行通知")
             
             return order
         except Exception as e:

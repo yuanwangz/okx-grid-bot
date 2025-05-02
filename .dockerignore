@@ -1,0 +1,49 @@
+# Git相关
+.git
+.github
+.gitignore
+
+# 环境文件 - 不要包含在镜像中
+.env
+*.env
+
+# 本地数据目录
+data/
+*.log
+*.log.*
+
+# 开发环境
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 编辑器相关
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Docker相关
+.dockerignore
+docker-compose*.yml
+Dockerfile* 
