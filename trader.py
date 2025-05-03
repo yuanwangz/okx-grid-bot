@@ -128,23 +128,47 @@ class GridTrader:
                         # 注意: ccxt 返回的 trade 结构可能需要调整
                         # 假设 OrderTracker 需要 timestamp(秒), side, price, amount, profit, order_id
                         # profit 可能需要后续计算或默认为0
-                        formatted_trade = {
-                            'timestamp': int(trade['uTime']) / 1000, # ms to s
-                            'side': trade['side'],
-                            'price': float(trade['fillPx']),
-                            'amount': float(trade['sz']),
-                            'cost': float(trade['fillSz']) * float(trade['fillPx']), # 保留原始 cost
-                            # 'fee': trade.get('fee', {}).get('cost', 0), # 提取手续费
-                            'fee': 0, # 提取手续费
-                            'order_id': trade.get('ordId'), # 关联订单ID
-                            'profit': 0 # 初始化时设为0，或者后续计算
-                        }
-                        formatted_trades.append(formatted_trade)
+                        try:
+                            # 添加安全检查，处理空字段
+                            fillPx = trade.get('fillPx', '')
+                            if not fillPx:
+                                self.logger.warning(f"跳过没有价格的交易记录: {trade}")
+                                continue
+                                
+                            sz = trade.get('sz', '')
+                            if not sz:
+                                self.logger.warning(f"跳过没有数量的交易记录: {trade}")
+                                continue
+                                
+                            fillSz = trade.get('fillSz', '')
+                            if not fillSz:
+                                self.logger.warning(f"跳过没有成交数量的交易记录: {trade}")
+                                continue
+                                
+                            formatted_trade = {
+                                'timestamp': int(trade.get('uTime', int(time.time()*1000))) / 1000, # ms to s，默认当前时间
+                                'side': trade.get('side', 'buy'),  # 默认buy
+                                'price': float(fillPx),
+                                'amount': float(sz),
+                                'cost': float(fillSz) * float(fillPx), # 保留原始 cost
+                                'fee': 0, # 提取手续费
+                                'order_id': trade.get('ordId', ''), # 关联订单ID
+                                'profit': 0 # 初始化时设为0，或者后续计算
+                            }
+                            formatted_trades.append(formatted_trade)
+                        except ValueError as ve:
+                            self.logger.warning(f"处理交易记录时数据转换错误: {str(ve)}, 跳过此记录: {trade}")
+                        except Exception as e:
+                            self.logger.warning(f"处理交易记录时发生错误: {str(e)}, 跳过此记录")
                     
-                    # 直接替换 OrderTracker 中的历史记录
-                    self.order_tracker.trade_history = formatted_trades
-                    self.order_tracker.save_trade_history() # 保存到文件
-                    self.logger.info(f"已使用最新的 {len(formatted_trades)} 条交易记录更新历史。")
+                    # 只有当有有效记录时才更新历史
+                    if formatted_trades:
+                        # 直接替换 OrderTracker 中的历史记录
+                        self.order_tracker.trade_history = formatted_trades
+                        self.order_tracker.save_trade_history() # 保存到文件
+                        self.logger.info(f"已使用最新的 {len(formatted_trades)} 条交易记录更新历史。")
+                    else:
+                        self.logger.warning("未找到有效的交易记录，保留原有历史。")
                 else:
                     self.logger.info("未能获取到最新的交易记录，将使用本地历史。")
             except Exception as trade_fetch_error:

@@ -391,10 +391,22 @@ class ExchangeClient:
                 'ccy': asset,
                 'amt': formatted_amount,
                 'side': 'purchase',
+                'rate': '1', # 添加rate参数，OKX API要求此参数
             }
             self.logger.info(f"开始申购: {formatted_amount} {asset} 到活期理财")
             result = await asyncio.to_thread(self.savings_api.savings_purchase_redemption, **params)
-            self.logger.info(f"划转成功: {result}")
+            
+            # 检查API返回结果是否成功
+            if isinstance(result, dict) and result.get('code') != '0':
+                self.logger.error(f"申购失败 - API返回错误: {result}")
+                if 'This feature is unavailable in demo trading' in str(result):
+                    self.logger.warning(f"模拟交易模式不支持理财功能，忽略错误")
+                    # 模拟成功，避免后续错误
+                    return {'code': '0', 'msg': 'Simulated success in demo mode', 'data': []}
+                else:
+                    raise Exception(f"申购API返回错误: {result}")
+            else:
+                self.logger.info(f"划转成功: {result}")
             
             # 申购后清除余额缓存，确保下次获取最新余额
             self.balance_cache = {'timestamp': 0, 'data': None}
@@ -404,6 +416,13 @@ class ExchangeClient:
         except Exception as e:
             error_msg = f"申购失败: {str(e)} | 堆栈信息: {traceback.format_exc()} | 参数: asset={asset}, amount={amount}"
             self.logger.error(error_msg)
+            
+            # 判断是否是模拟交易环境不支持理财功能的错误
+            if 'This feature is unavailable in demo trading' in str(e):
+                self.logger.warning(f"模拟交易模式不支持理财功能，忽略错误")
+                # 模拟成功，避免中断交易流程
+                return {'code': '0', 'msg': 'Simulated success in demo mode', 'data': []}
+            
             raise Exception(error_msg)
 
     async def fetch_my_trades(self, symbol, limit=10):
