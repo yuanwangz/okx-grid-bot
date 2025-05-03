@@ -621,8 +621,8 @@ async def handle_status(request):
         target_order_amount = total_assets * 0.1
         
         # 获取S1策略的数据
-        s1_high = getattr(trader.position_controller_s1, 'highest_52w', None)
-        s1_low = getattr(trader.position_controller_s1, 'lowest_52w', None)
+        s1_high = getattr(trader.position_controller_s1, 's1_daily_high', None)
+        s1_low = getattr(trader.position_controller_s1, 's1_daily_low', None)
         
         # 获取交易历史
         trade_history = []
