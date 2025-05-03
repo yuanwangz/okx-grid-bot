@@ -529,10 +529,10 @@ class GridTrader:
                 updated_order = await self.exchange.fetch_order(order_id, self.config.SYMBOL)
                 
                 # 订单已成交
-                if updated_order['status'] == 'closed':
+                if updated_order['state'] == 'filled':
                     self.logger.info(f"订单已成交 | ID: {order_id}")
                     # 更新基准价
-                    self.base_price = float(updated_order['price'])
+                    self.base_price = float(updated_order['avgPx'])
                     # 清除活跃订单状态
                     self.active_orders[side] = None
                     
@@ -540,15 +540,15 @@ class GridTrader:
                     trade_info = {
                         'timestamp': time.time(),
                         'side': side,
-                        'price': float(updated_order['price']),
-                        'amount': float(updated_order['filled']),
-                        'order_id': updated_order['id']
+                        'price': float(updated_order['avgPx']),
+                        'amount': float(updated_order['accFillSz']),
+                        'order_id': updated_order['ordId']
                     }
                     self.order_tracker.add_trade(trade_info)
                     
                     # 更新最后交易时间和价格
                     self.last_trade_time = time.time()
-                    self.last_trade_price = float(updated_order['price'])
+                    self.last_trade_price = float(updated_order['avgPx'])
                     
                     # 更新总资产信息
                     await self._update_total_assets()
@@ -558,8 +558,8 @@ class GridTrader:
                     # 发送通知
                     # 使用更清晰的格式发送交易成功消息
                     trade_side = 'buy' if side == 'buy' else 'sell'
-                    trade_price = float(updated_order['price'])
-                    trade_amount = float(updated_order['filled']) 
+                    trade_price = float(updated_order['avgPx'])
+                    trade_amount = float(updated_order['accFillSz']) 
                     trade_total = trade_price * trade_amount
                     
                     # 使用format_trade_message函数处理消息格式
@@ -593,25 +593,25 @@ class GridTrader:
                         if check_order['status'] == 'closed':
                             self.logger.info(f"订单已经成交 | ID: {order_id}")
                             # 处理已成交的订单（与上面相同的逻辑）
-                            self.base_price = float(check_order['price'])
+                            self.base_price = float(check_order['avgPx'])
                             self.active_orders[side] = None
                             trade_info = {
                                 'timestamp': time.time(),
                                 'side': side,
-                                'price': float(check_order['price']),
-                                'amount': float(check_order['filled']),
-                                'order_id': check_order['id']
+                                'price': float(check_order['avgPx']),
+                                'amount': float(check_order['accFillSz']),
+                                'order_id': check_order['ordId']
                             }
                             self.order_tracker.add_trade(trade_info)
                             self.last_trade_time = time.time()
-                            self.last_trade_price = float(check_order['price'])
+                            self.last_trade_price = float(check_order['avgPx'])
                             await self._update_total_assets()
                             self.logger.info(f"基准价已更新: {self.base_price}")
                             
                             # 使用更清晰的格式发送交易成功消息
                             trade_side = 'buy' if side == 'buy' else 'sell'
-                            trade_price = float(check_order['price'])
-                            trade_amount = float(check_order['filled']) 
+                            trade_price = float(check_order['avgPx'])
+                            trade_amount = float(check_order['accFillSz']) 
                             trade_total = trade_price * trade_amount
                             
                             # 使用format_trade_message函数处理消息格式

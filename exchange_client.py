@@ -119,7 +119,8 @@ class ExchangeClient:
                 limit=limit or 100
             )
             if result['code'] == '0':
-                return result['data']
+                closes = [float(candle[4]) for candle in result['data']]
+                return closes
             else:
                 error_msg = f"获取K线数据失败: {result['msg']} | 错误码: {result['code']} | 参数: symbol={symbol}, timeframe={timeframe}, limit={limit}"
                 self.logger.error(error_msg)
@@ -424,3 +425,22 @@ class ExchangeClient:
             error_msg = f"获取成交记录失败: {str(e)} | 堆栈信息: {traceback.format_exc()} | 参数: symbol={symbol}, limit={limit}"
             self.logger.error(error_msg)
             return [] 
+
+    async def _get_price_percentile(self, symbol, timeframe='1H', limit=100):
+        """获取价格分位值"""
+        try:
+            ohlcv = await self.fetch_ohlcv(symbol, timeframe, limit)
+            if ohlcv:
+                sorted_prices = sorted(ohlcv)
+                lower = float(sorted_prices[int(len(sorted_prices)*0.25)])  # 25%分位
+                upper = float(sorted_prices[int(len(sorted_prices)*0.75)])  # 75%分位
+                mid_price = (float(sorted_prices[0]) + float(sorted_prices[-1])) / 2
+                return lower, upper, mid_price
+            else:
+                error_msg = f"获取价格分位值失败: 无法获取K线数据 | 参数: symbol={symbol}, timeframe={timeframe}, limit={limit}"
+                self.logger.error(error_msg)
+                raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"获取价格分位值失败: {str(e)} | 堆栈信息: {traceback.format_exc()} | 参数: symbol={symbol}, timeframe={timeframe}, limit={limit}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg) 
