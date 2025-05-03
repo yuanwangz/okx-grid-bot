@@ -16,7 +16,7 @@ COPY . /app
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 58081
+EXPOSE 58181
 
 # 设置默认启动命令
 CMD ["python", "main.py"]

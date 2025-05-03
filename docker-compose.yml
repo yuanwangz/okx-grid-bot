@@ -8,7 +8,7 @@ services:
     env_file:
       - .env # 引用 .env 文件
     ports:
-      - "58080:58080" # 修正端口映射
+      - "58181:58181" # 修正端口映射
     volumes:
       - ./data:/app/data # 只挂载需要持久化的数据目录
       - ./.env:/app/.env # 挂载.env文件

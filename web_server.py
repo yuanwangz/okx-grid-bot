@@ -5,6 +5,14 @@ import aiofiles
 import logging
 from datetime import datetime
 import psutil
+import secrets
+import hashlib
+from config import WEB_PASSWORD  # 导入密码配置
+
+# 生成随机密钥用于会话
+SECRET_KEY = secrets.token_hex(32)
+# 存储会话数据
+SESSION_DATA = {}
 
 class IPLogger:
     def __init__(self):
@@ -73,6 +81,99 @@ async def _read_log_content():
     
     return '\n'.join(filtered_lines)
 
+async def handle_login(request):
+    """处理登录请求"""
+    if request.method == 'POST':
+        try:
+            form = await request.post()
+            password = form.get('password', '')
+            
+            if password == WEB_PASSWORD:
+                # 创建会话
+                session_id = secrets.token_hex(16)
+                SESSION_DATA[session_id] = {
+                    'authenticated': True, 
+                    'login_time': datetime.now().isoformat()
+                }
+                
+                # 设置会话cookie
+                response = web.HTTPFound('/')
+                response.set_cookie('session_id', session_id, httponly=True)
+                return response
+            else:
+                return web.Response(
+                    text='''
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>登录失败</title>
+                        <meta charset="utf-8">
+                        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+                    </head>
+                    <body class="bg-gray-100 flex items-center justify-center h-screen">
+                        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+                            <h1 class="text-2xl font-bold text-center text-red-600 mb-6">登录失败</h1>
+                            <p class="text-center mb-6">密码错误，请重试</p>
+                            <div class="text-center">
+                                <a href="/login" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                                    返回登录
+                                </a>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    ''',
+                    content_type='text/html'
+                )
+        except Exception as e:
+            logging.error(f"登录处理错误: {str(e)}", exc_info=True)
+            return web.HTTPInternalServerError(text=f"登录处理错误: {str(e)}")
+    
+    # GET请求，显示登录表单
+    return web.Response(
+        text='''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>网格交易监控系统 - 登录</title>
+            <meta charset="utf-8">
+            <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+        </head>
+        <body class="bg-gray-100 flex items-center justify-center h-screen">
+            <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+                <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">网格交易监控系统</h1>
+                <form method="post" action="/login">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="password">
+                            请输入密码:
+                        </label>
+                        <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
+                               id="password" name="password" type="password" placeholder="输入访问密码">
+                    </div>
+                    <div class="flex items-center justify-center">
+                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" 
+                                type="submit">
+                            登录
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </body>
+        </html>
+        ''',
+        content_type='text/html'
+    )
+
+async def handle_logout(request):
+    """处理退出登录请求"""
+    session_id = request.cookies.get('session_id')
+    if session_id and session_id in SESSION_DATA:
+        del SESSION_DATA[session_id]
+    
+    response = web.HTTPFound('/login')
+    response.del_cookie('session_id')
+    return response
+
 async def handle_log(request):
     try:
         # 记录IP访问
@@ -86,6 +187,17 @@ async def handle_log(request):
         content = await _read_log_content()
         if content is None:
             return web.Response(text="日志文件不存在", status=404)
+        
+        # 预先构建IP访问记录HTML
+        ip_records_html = ""
+        for record in list(reversed(request.app['ip_logger'].get_records()))[:5]:
+            ip_records_html += f"""
+            <tr class="border-b">
+                <td class="px-6 py-4">{record["time"]}</td>
+                <td class="px-6 py-4">{record["ip"]}</td>
+                <td class="px-6 py-4">{record["path"]}</td>
+            </tr>
+            """
             
         html = f"""
         <!DOCTYPE html>
@@ -126,7 +238,12 @@ async def handle_log(request):
         </head>
         <body class="bg-gray-100">
             <div class="container mx-auto px-4 py-8">
-                <h1 class="text-3xl font-bold mb-8 text-center text-gray-800">网格交易监控系统</h1>
+                <div class="flex justify-between items-center mb-8">
+                    <h1 class="text-3xl font-bold text-gray-800">网格交易监控系统</h1>
+                    <a href="/logout" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                        退出登录
+                    </a>
+                </div>
                 
                 <!-- 状态卡片 -->
                 <div class="grid-container mb-8">
@@ -199,42 +316,90 @@ async def handle_log(request):
                             </div>
                             <div class="flex justify-between">
                                 <span>{request.app['trader'].base_symbol}余额</span>
-                                <span class="status-value" id="okb-balance">--</span>
+                                <span class="status-value" id="base-balance">--</span>
+                            </div>
+                            <div class="flex justify-between pt-2 border-t mt-2">
+                                <span>初始本金</span>
+                                <span class="status-value" id="initial-principal">--</span>
                             </div>
                             <div class="flex justify-between">
                                 <span>总盈亏(USDT)</span>
-                                <span class="status-value" id="total-profit">--</span>
+                                <span class="status-value" id="total-pnl">--</span>
                             </div>
                             <div class="flex justify-between">
-                                <span>盈亏率(%)</span>
-                                <span class="status-value" id="profit-rate">--</span>
+                                <span>总收益率</span>
+                                <span class="status-value" id="total-roi">--</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 系统资源监控 -->
-                <div class="card mb-8">
-                    <h2 class="text-lg font-semibold mb-4">系统资源</h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="p-4 bg-gray-50 rounded-lg">
-                            <div class="text-sm text-gray-600">CPU使用率</div>
-                            <div class="text-2xl font-bold mt-1">{system_stats['cpu_percent']}%</div>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded-lg">
-                            <div class="text-sm text-gray-600">内存使用</div>
-                            <div class="text-2xl font-bold mt-1">{system_stats['memory_percent']}%</div>
-                            <div class="text-sm text-gray-500">
-                                {system_stats['memory_used']}GB / {system_stats['memory_total']}GB
+                <!-- 交易统计信息 -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">交易统计</h2>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                                <p class="text-gray-600">总交易次数</p>
+                                <p class="text-lg font-semibold" id="total-trades">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">胜率</p>
+                                <p class="text-lg font-semibold" id="win-rate">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">最大盈利</p>
+                                <p class="text-lg font-semibold text-green-500" id="max-profit">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">最大亏损</p>
+                                <p class="text-lg font-semibold text-red-500" id="max-loss">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">平均盈利</p>
+                                <p class="text-lg font-semibold" id="avg-profit">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">连续盈利</p>
+                                <p class="text-lg font-semibold" id="consecutive-wins">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">连续亏损</p>
+                                <p class="text-lg font-semibold" id="consecutive-losses">--</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">盈亏比</p>
+                                <p class="text-lg font-semibold" id="profit-factor">--</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- 系统资源使用情况 -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">系统资源</h2>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                                <p class="text-gray-600">CPU 使用率</p>
+                                <p class="text-lg font-semibold">{system_stats['cpu_percent']}%</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">内存使用</p>
+                                <p class="text-lg font-semibold">{system_stats['memory_used']} / {system_stats['memory_total']} GB</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">内存使用率</p>
+                                <p class="text-lg font-semibold">{system_stats['memory_percent']}%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- 最近交易记录 -->
-                <div class="card mt-4 mb-8">
-                    <h2 class="text-lg font-semibold mb-4">最近交易</h2>
-                    <div class="overflow-x-auto">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">最近交易</h2>
+                    <div class="bg-white p-4 rounded-lg shadow overflow-x-auto">
                         <table class="min-w-full">
                             <thead>
                                 <tr class="border-b">
@@ -243,6 +408,7 @@ async def handle_log(request):
                                     <th class="text-left py-2">价格</th>
                                     <th class="text-left py-2">数量</th>
                                     <th class="text-left py-2">金额(USDT)</th>
+                                    <th class="text-left py-2">盈亏</th>
                                 </tr>
                             </thead>
                             <tbody id="trade-history">
@@ -253,9 +419,9 @@ async def handle_log(request):
                 </div>
 
                 <!-- IP访问记录 -->
-                <div class="card mb-8">
-                    <h2 class="text-lg font-semibold mb-4">访问记录</h2>
-                    <div class="overflow-x-auto">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">访问记录</h2>
+                    <div class="bg-white p-4 rounded-lg shadow overflow-x-auto">
                         <table class="min-w-full">
                             <thead>
                                 <tr class="bg-gray-50">
@@ -265,173 +431,174 @@ async def handle_log(request):
                                 </tr>
                             </thead>
                             <tbody>
-                                {''.join([f'''
-                                <tr class="border-b">
-                                    <td class="px-6 py-4">{record["time"]}</td>
-                                    <td class="px-6 py-4">{record["ip"]}</td>
-                                    <td class="px-6 py-4">{record["path"]}</td>
-                                </tr>
-                                ''' for record in list(reversed(request.app['ip_logger'].get_records()))[:5]])}
+                                {ip_records_html}
                             </tbody>
                         </table>
                     </div>
                 </div>
-
-                <!-- 系统日志 -->
-                <div class="card">
-                    <h2 class="text-lg font-semibold mb-4">系统日志</h2>
-                    <div class="log-container" id="log-content">
+                
+                <!-- 日志容器 -->
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">系统日志</h2>
+                    <div class="log-container font-mono text-sm" id="log-container">
                         <pre>{content}</pre>
                     </div>
                 </div>
             </div>
 
             <script>
+                // 每5秒自动更新状态和日志
                 async function updateStatus() {{
                     try {{
                         const response = await fetch('/api/status');
                         const data = await response.json();
                         
-                        if (data.error) {{
-                            console.error('获取状态失败:', data.error);
-                            return;
-                        }}
+                        // 更新价格信息
+                        document.getElementById('base-price').textContent = data.base_price.toFixed(4);
+                        document.getElementById('current-price').textContent = data.current_price.toFixed(4);
+                        document.getElementById('s1-high').textContent = data.s1_high ? data.s1_high.toFixed(4) : '--';
+                        document.getElementById('s1-low').textContent = data.s1_low ? data.s1_low.toFixed(4) : '--';
+                        document.getElementById('position-percentage').textContent = data.position_percentage.toFixed(2) + '%';
                         
-                        // 更新基本信息
-                        document.querySelector('#base-price').textContent = 
-                            data.base_price ? data.base_price.toFixed(2) + ' USDT' : '--';
-                        
-                        // 更新当前价格
-                        document.querySelector('#current-price').textContent = 
-                            data.current_price ? data.current_price.toFixed(2) : '--';
-                        
-                        // 更新 S1 信息和仓位
-                        document.querySelector('#s1-high').textContent = 
-                            data.s1_daily_high ? data.s1_daily_high.toFixed(2) : '--';
-                        document.querySelector('#s1-low').textContent = 
-                            data.s1_daily_low ? data.s1_daily_low.toFixed(2) : '--';
-                        document.querySelector('#position-percentage').textContent = 
-                            data.position_percentage != null ? data.position_percentage.toFixed(2) + '%' : '--';
-                        
-                        // 更新网格参数
-                        document.querySelector('#grid-size').textContent = 
-                            data.grid_size ? (data.grid_size * 100).toFixed(2) + '%' : '--';
-                        document.querySelector('#threshold').textContent = 
-                            data.threshold ? (data.threshold * 100).toFixed(2) + '%' : '--';
-
-                        // ---> 新增：更新网格上下轨 <---
-                        document.querySelector('#grid-upper-band').textContent =
-                            data.grid_upper_band != null ? data.grid_upper_band.toFixed(2) : '--';
-                        document.querySelector('#grid-lower-band').textContent =
-                            data.grid_lower_band != null ? data.grid_lower_band.toFixed(2) : '--';
+                        // 更新网格信息
+                        document.getElementById('grid-size').textContent = data.grid_size.toFixed(2) + '%';
+                        document.getElementById('grid-upper-band').textContent = data.upper_band.toFixed(4);
+                        document.getElementById('grid-lower-band').textContent = data.lower_band.toFixed(4);
+                        document.getElementById('threshold').textContent = data.threshold.toFixed(4) + '%';
+                        document.getElementById('target-order-amount').textContent = data.target_order_amount.toFixed(2) + ' USDT';
                         
                         // 更新资金状况
-                        document.querySelector('#total-assets').textContent = 
-                            data.total_assets ? data.total_assets.toFixed(2) + ' USDT' : '--';
-                        document.querySelector('#usdt-balance').textContent = 
-                            data.usdt_balance != null ? data.usdt_balance.toFixed(2) : '--';
-                        document.querySelector('#okb-balance').textContent = 
-                            data.coin_balance != null ? data.coin_balance.toFixed(4) : '--';
+                        document.getElementById('total-assets').textContent = data.total_assets.toFixed(2);
+                        document.getElementById('usdt-balance').textContent = data.usdt_balance.toFixed(2);
+                        document.getElementById('base-balance').textContent = data.base_balance.toFixed(4);
+                        document.getElementById('initial-principal').textContent = data.initial_principal.toFixed(2);
                         
                         // 更新盈亏信息
-                        const totalProfitElement = document.querySelector('#total-profit');
-                        totalProfitElement.textContent = data.total_profit ? data.total_profit.toFixed(2) : '--';
-                        totalProfitElement.className = `status-value ${{data.total_profit >= 0 ? 'profit' : 'loss'}}`;
-
-                        const profitRateElement = document.querySelector('#profit-rate');
-                        profitRateElement.textContent = data.profit_rate ? data.profit_rate.toFixed(2) + '%' : '--';
-                        profitRateElement.className = `status-value ${{data.profit_rate >= 0 ? 'profit' : 'loss'}}`;
+                        const pnlElement = document.getElementById('total-pnl');
+                        pnlElement.textContent = data.total_pnl.toFixed(2);
+                        pnlElement.className = 'status-value ' + (data.total_pnl >= 0 ? 'profit' : 'loss');
+                        
+                        const roiElement = document.getElementById('total-roi');
+                        roiElement.textContent = data.total_roi.toFixed(2) + '%';
+                        roiElement.className = 'status-value ' + (data.total_roi >= 0 ? 'profit' : 'loss');
+                        
+                        // 更新交易统计信息
+                        if (data.statistics) {{
+                            document.getElementById('total-trades').textContent = data.statistics.total_trades;
+                            document.getElementById('win-rate').textContent = (data.statistics.win_rate * 100).toFixed(2) + '%';
+                            document.getElementById('max-profit').textContent = data.statistics.max_profit.toFixed(2);
+                            document.getElementById('max-loss').textContent = data.statistics.max_loss.toFixed(2);
+                            document.getElementById('avg-profit').textContent = data.statistics.avg_profit.toFixed(2);
+                            document.getElementById('consecutive-wins').textContent = data.statistics.consecutive_wins;
+                            document.getElementById('consecutive-losses').textContent = data.statistics.consecutive_losses;
+                            document.getElementById('profit-factor').textContent = data.statistics.profit_factor.toFixed(2);
+                        }}
                         
                         // 更新交易历史
-                        document.querySelector('#trade-history').innerHTML = data.trade_history.map(function(trade) {{ return ` 
-                            <tr class="border-b">
-                                <td class="py-2">${{trade.timestamp}}</td>
-                                <td class="py-2 ${{trade.side === 'buy' ? 'text-green-500' : 'text-red-500'}}">
-                                    ${{trade.side === 'buy' ? '买入' : '卖出'}}
-                                </td>
-                                <td class="py-2">${{parseFloat(trade.price).toFixed(2)}}</td>
-                                <td class="py-2">${{parseFloat(trade.amount).toFixed(4)}}</td>
-                                <td class="py-2">${{(parseFloat(trade.price) * parseFloat(trade.amount)).toFixed(2)}}</td>
-                            </tr>
-                        `; }}).join('');
-                        
-                        // 更新目标委托金额
-                        document.querySelector('#target-order-amount').textContent = 
-                            data.target_order_amount ? data.target_order_amount.toFixed(2) + ' USDT' : '--';
-                        
-                        console.log('状态更新成功:', data);
+                        if (data.trade_history && data.trade_history.length > 0) {{
+                            document.getElementById('trade-history').innerHTML = data.trade_history.map(trade => `
+                                <tr class="border-b">
+                                    <td class="py-2">${{trade.timestamp}}</td>
+                                    <td class="py-2 ${{trade.side === 'buy' ? 'text-green-500' : 'text-red-500'}}">
+                                        ${{trade.side === 'buy' ? '买入' : '卖出'}}
+                                    </td>
+                                    <td class="py-2">${{parseFloat(trade.price).toFixed(4)}}</td>
+                                    <td class="py-2">${{parseFloat(trade.amount).toFixed(4)}}</td>
+                                    <td class="py-2">${{(parseFloat(trade.price) * parseFloat(trade.amount)).toFixed(2)}}</td>
+                                    <td class="py-2 ${{parseFloat(trade.profit) >= 0 ? 'text-green-500' : 'text-red-500'}}">
+                                        ${{parseFloat(trade.profit).toFixed(2)}}
+                                    </td>
+                                </tr>
+                            `).join('');
+                        }}
                     }} catch (error) {{
                         console.error('更新状态失败:', error);
                     }}
                 }}
-
-                // 每2秒更新一次状态
-                setInterval(updateStatus, 2000);
                 
-                // 页面加载时立即更新一次
+                async function updateLog() {{
+                    try {{
+                        const response = await fetch('/api/logs');
+                        const logContent = await response.text();
+                        document.getElementById('log-container').innerHTML = `<pre>${{logContent}}</pre>`;
+                    }} catch (error) {{
+                        console.error('更新日志失败:', error);
+                    }}
+                }}
+                
+                // 立即更新一次
                 updateStatus();
+                
+                // 设置定时更新
+                setInterval(updateStatus, 5000);
+                setInterval(updateLog, 10000);
             </script>
         </body>
         </html>
         """
         return web.Response(text=html, content_type='text/html')
     except Exception as e:
-        return web.Response(text=f"Error: {str(e)}", status=500)
+        logging.error(f"渲染页面失败: {str(e)}", exc_info=True)
+        return web.Response(text=f"渲染页面失败: {str(e)}", status=500)
 
 async def handle_status(request):
-    """处理状态API请求"""
     try:
         trader = request.app['trader']
-        s1_controller = trader.position_controller_s1 # 获取 S1 控制器实例
-
-        # 获取交易所数据
-        balance = await trader.exchange.fetch_balance()
-        current_price = await trader._get_latest_price() or 0 # 提供默认值以防失败
         
-        # 获取理财账户余额
-        funding_balance = await trader.exchange.fetch_funding_balance()
+        # 获取各项数据
+        base_price = trader.base_price
+        current_price = trader.current_price or await trader._get_latest_price()
         
         # 获取网格参数
         grid_size = trader.grid_size
-        grid_size_decimal = grid_size / 100 if grid_size else 0
-        threshold = grid_size_decimal / 5
+        upper_band = trader._get_upper_band()
+        lower_band = trader._get_lower_band()
+        threshold = trader.config.GRID_PARAMS['initial'] / 5 / 100  # 简化计算，使用初始网格大小
         
-        # ---> 新增：计算网格上下轨 <---
-        # 确保 trader.base_price 和 trader.grid_size 是有效的
-        upper_band = None
-        lower_band = None
-        if trader.base_price is not None and trader.grid_size is not None:
-             try:
-                 # 调用 trader.py 中已有的方法
-                 upper_band = trader._get_upper_band()
-                 lower_band = trader._get_lower_band()
-             except Exception as band_e:
-                 logging.warning(f"计算网格上下轨失败: {band_e}")
+        # 获取仓位信息
+        position = await trader._get_position_ratio()
+        position_percentage = position * 100
         
+        # 获取资金状况
+        await trader._update_total_assets()  # 确保总资产已更新
+        total_assets = trader.total_assets
         
-        # 计算总资产
-        coin_balance = float(balance['total'].get(trader.symbol_info['base'], 0))
-        usdt_balance = float(balance['total'].get('USDT', 0))
-        total_assets = usdt_balance + (coin_balance * current_price)
+        # 获取各种余额
+        try:
+            balance = await trader.exchange.fetch_balance()
+            funding_balance = await trader.exchange.fetch_funding_balance()
+            
+            usdt_balance = (
+                float(balance.get('free', {}).get('USDT', 0)) +
+                float(funding_balance.get('USDT', 0))
+            )
+            
+            base_balance = (
+                float(balance.get('free', {}).get(trader.base_symbol, 0)) +
+                float(funding_balance.get(trader.base_symbol, 0))
+            )
+        except Exception as e:
+            logging.error(f"获取余额失败: {str(e)}")
+            usdt_balance = 0
+            base_balance = 0
         
-        # 计算总盈亏和盈亏率
+        # 计算盈亏
         initial_principal = trader.config.INITIAL_PRINCIPAL
-        total_profit = 0.0
-        profit_rate = 0.0
-        if initial_principal > 0:
-            total_profit = total_assets - initial_principal
-            profit_rate = (total_profit / initial_principal) * 100
-        else:
-            logging.warning("初始本金未设置或为0，无法计算盈亏率")
+        total_pnl = initial_principal > 0 and total_assets - initial_principal or 0
+        total_roi = initial_principal > 0 and (total_pnl / initial_principal) * 100 or 0
         
-        # 获取最近交易信息
-        last_trade_price = trader.last_trade_price
-        last_trade_time = trader.last_trade_time
-        last_trade_time_str = datetime.fromtimestamp(last_trade_time).strftime('%Y-%m-%d %H:%M:%S') if last_trade_time else '--'
+        # 计算目标委托金额，基于资产的10%作为示例
+        target_order_amount = total_assets * 0.1
+        
+        # 获取S1策略的数据
+        s1_high = getattr(trader.position_controller_s1, 'highest_52w', None)
+        s1_low = getattr(trader.position_controller_s1, 'lowest_52w', None)
         
         # 获取交易历史
         trade_history = []
+        statistics = {}
         if hasattr(trader, 'order_tracker'):
+            # 获取交易历史记录
             trades = trader.order_tracker.get_trade_history()
             trade_history = [{
                 'timestamp': datetime.fromtimestamp(trade['timestamp']).strftime('%Y-%m-%d %H:%M:%S'),
@@ -440,50 +607,83 @@ async def handle_status(request):
                 'amount': trade.get('amount', 0),
                 'profit': trade.get('profit', 0)
             } for trade in trades[-10:]]  # 只取最近10笔交易
+            
+            # 获取交易统计数据
+            try:
+                statistics = trader.order_tracker.get_statistics()
+                if not statistics:
+                    statistics = {
+                        'total_trades': 0,
+                        'win_rate': 0,
+                        'total_profit': 0,
+                        'avg_profit': 0,
+                        'max_profit': 0,
+                        'max_loss': 0,
+                        'profit_factor': 0,
+                        'consecutive_wins': 0,
+                        'consecutive_losses': 0
+                    }
+            except Exception as e:
+                logging.error(f"获取交易统计信息失败: {str(e)}")
+                statistics = {
+                    'total_trades': len(trades),
+                    'win_rate': 0,
+                    'total_profit': 0,
+                    'avg_profit': 0,
+                    'max_profit': 0,
+                    'max_loss': 0,
+                    'profit_factor': 0,
+                    'consecutive_wins': 0,
+                    'consecutive_losses': 0
+                }
         
-        # 计算目标委托金额 (总资产的10%)
-        target_order_amount = await trader._calculate_order_amount('buy') # buy/sell 结果一样
-        
-        # 获取仓位百分比 - 使用风控管理器的方法获取最准确的仓位比例
-        position_ratio = await trader.risk_manager._get_position_ratio()
-        position_percentage = position_ratio * 100
-        
-        # 获取 S1 高低价
-        s1_high = s1_controller.s1_daily_high if s1_controller else None
-        s1_low = s1_controller.s1_daily_low if s1_controller else None
-        
-        # 构建响应数据
-        status = {
-            "base_price": trader.base_price,
-            "current_price": current_price,
-            "grid_size": grid_size_decimal,
-            "threshold": threshold,
-            "total_assets": total_assets,
-            "usdt_balance": usdt_balance,
-            "coin_balance": coin_balance,
-            "target_order_amount": target_order_amount,
-            "trade_history": trade_history or [],
-            "last_trade_price": last_trade_price,
-            "last_trade_time": last_trade_time,
-            "last_trade_time_str": last_trade_time_str,
-            "total_profit": total_profit,
-            "profit_rate": profit_rate,
-            "s1_daily_high": s1_high,
-            "s1_daily_low": s1_low,
-            "position_percentage": position_percentage,
-            # ---> 新增：添加上下轨到响应数据 <---
-            "grid_upper_band": upper_band,
-            "grid_lower_band": lower_band
-        }
-        
-        return web.json_response(status)
+        return web.json_response({
+            'base_price': base_price,
+            'current_price': current_price,
+            's1_high': s1_high,
+            's1_low': s1_low,
+            'grid_size': grid_size,
+            'upper_band': upper_band,
+            'lower_band': lower_band,
+            'threshold': threshold * 100,  # 转为百分比
+            'position_percentage': position_percentage,
+            'total_assets': total_assets,
+            'usdt_balance': usdt_balance,
+            'base_balance': base_balance,
+            'initial_principal': initial_principal,
+            'total_pnl': total_pnl,
+            'total_roi': total_roi,
+            'target_order_amount': target_order_amount,
+            'trade_history': trade_history,
+            'statistics': statistics
+        })
     except Exception as e:
         logging.error(f"获取状态数据失败: {str(e)}", exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 async def start_web_server(trader):
     app = web.Application()
-    # 添加中间件处理无效请求
+    
+    # 中间件检查身份验证（如果设置了密码）
+    @web.middleware
+    async def auth_middleware(request, handler):
+        # 如果未设置密码，则不需要验证
+        if not WEB_PASSWORD:
+            return await handler(request)
+            
+        # 登录页面和登录处理不需要验证
+        if request.path == '/login':
+            return await handler(request)
+            
+        # 检查会话是否有效
+        session_id = request.cookies.get('session_id')
+        if session_id and session_id in SESSION_DATA and SESSION_DATA[session_id].get('authenticated'):
+            return await handler(request)
+        else:
+            # 未认证，重定向到登录页
+            return web.HTTPFound('/login')
+    
+    # 添加错误处理中间件
     @web.middleware
     async def error_middleware(request, handler):
         try:
@@ -501,16 +701,23 @@ async def start_web_server(trader):
                 headers={'Access-Control-Allow-Origin': '*'}
             )
     
+    # 添加中间件
+    app.middlewares.append(auth_middleware)
     app.middlewares.append(error_middleware)
+    
     app['trader'] = trader
     app['ip_logger'] = IPLogger()
     
     # 禁用访问日志
     logging.getLogger('aiohttp.access').setLevel(logging.WARNING)
     
+    # 定义路由
     app.router.add_get('/', handle_log)
+    app.router.add_route('*', '/login', handle_login)  # 支持GET和POST
+    app.router.add_get('/logout', handle_logout)
     app.router.add_get('/api/logs', handle_log_content)
     app.router.add_get('/api/status', handle_status)
+    
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 58181)
@@ -521,6 +728,8 @@ async def start_web_server(trader):
     logging.info(f"Web服务已启动:")
     logging.info(f"- 本地访问: http://{local_ip}:58181")
     logging.info(f"- 局域网访问: http://0.0.0.0:58181")
+    if WEB_PASSWORD:
+        logging.info(f"- 已启用密码保护")
 
 async def handle_log_content(request):
     """只返回日志内容的API端点"""

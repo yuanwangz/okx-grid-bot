@@ -11,18 +11,59 @@ BASE_CURRENCY = BASE_SYMBOL
 
 FLAG = os.getenv('FLAG', '1')  # 0为实盘，1为模拟
 
-INITIAL_GRID = 2.0
+# 从环境变量读取初始网格大小，默认2.0
+try:
+    INITIAL_GRID = float(os.getenv('INITIAL_GRID', '2.0'))
+except ValueError:
+    INITIAL_GRID = 2.0
+    logging.warning("无效的INITIAL_GRID配置，已使用默认值2.0")
+
 FLIP_THRESHOLD = lambda grid_size: (grid_size / 5) / 100  # 网格大小的1/5的1%
 POSITION_SCALE_FACTOR = 0.2  # 仓位调整系数（20%）
-MIN_TRADE_AMOUNT = 20.0  # 新下限
+
+# 从环境变量读取最小交易金额，默认20.0
+try:
+    MIN_TRADE_AMOUNT = float(os.getenv('MIN_TRADE_AMOUNT', '20.0'))
+except ValueError:
+    MIN_TRADE_AMOUNT = 20.0
+    logging.warning("无效的MIN_TRADE_AMOUNT配置，已使用默认值20.0")
+
 MIN_POSITION_PERCENT = 0.05  # 最小交易比例（总资产的5%）
 MAX_POSITION_PERCENT = 0.15  # 最大交易比例（总资产的15%）
 COOLDOWN = 60
 SAFETY_MARGIN = 0.95
-MAX_DRAWDOWN = -0.15
-DAILY_LOSS_LIMIT = -0.05
-MAX_POSITION_RATIO = 0.9  # 最大仓位比例 (90%)，保留10%底仓
-MIN_POSITION_RATIO = 0.1  # 最小仓位比例 (10%)，底仓
+
+# 从环境变量读取最大回撤，默认-0.15
+try:
+    MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', '-0.15'))
+except ValueError:
+    MAX_DRAWDOWN = -0.15
+    logging.warning("无效的MAX_DRAWDOWN配置，已使用默认值-0.15")
+
+# 从环境变量读取每日亏损限制，默认-0.05
+try:
+    DAILY_LOSS_LIMIT = float(os.getenv('DAILY_LOSS_LIMIT', '-0.05'))
+except ValueError:
+    DAILY_LOSS_LIMIT = -0.05
+    logging.warning("无效的DAILY_LOSS_LIMIT配置，已使用默认值-0.05")
+
+# 从环境变量读取最大仓位比例，默认0.9 (90%)
+try:
+    MAX_POSITION_RATIO = float(os.getenv('MAX_POSITION_RATIO', '0.9'))
+except ValueError:
+    MAX_POSITION_RATIO = 0.9
+    logging.warning("无效的MAX_POSITION_RATIO配置，已使用默认值0.9")
+
+# 从环境变量读取最小仓位比例，默认0.1 (10%)
+try:
+    MIN_POSITION_RATIO = float(os.getenv('MIN_POSITION_RATIO', '0.1'))
+except ValueError:
+    MIN_POSITION_RATIO = 0.1
+    logging.warning("无效的MIN_POSITION_RATIO配置，已使用默认值0.1")
+
+# Web界面密码，如果未设置则默认为空（表示不需要密码）
+WEB_PASSWORD = os.getenv('WEB_PASSWORD', '')
+
 PUSHPLUS_TOKEN = os.getenv('PUSHPLUS_TOKEN')
 # Telegram Bot配置
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -138,6 +179,8 @@ class TradingConfig:
     INITIAL_PRINCIPAL = INITIAL_PRINCIPAL
     # 添加基础币种名称到类属性
     BASE_CURRENCY = BASE_CURRENCY
+    # 添加Web密码到类属性
+    WEB_PASSWORD = WEB_PASSWORD
 
     def __init__(self):
         # 添加配置验证
