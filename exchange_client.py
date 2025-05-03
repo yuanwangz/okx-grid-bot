@@ -235,8 +235,16 @@ class ExchangeClient:
             }
             
             if type.lower() != 'market':
-                params['px'] = str(price)
+                # 格式化价格，避免科学计数法表示
+                if price < 0.0001:
+                    # 对于极小价格，使用完整的十进制格式
+                    price_str = f"{price:.12f}".rstrip('0').rstrip('.')
+                    params['px'] = price_str
+                else:
+                    # 普通价格保留标准精度
+                    params['px'] = f"{price:.8f}".rstrip('0').rstrip('.')
             
+            self.logger.info(f"提交订单: {params}")
             result = await asyncio.to_thread(self.trade_api.place_order, **params)
             if result['code'] == '0':
                 return result['data'][0]
