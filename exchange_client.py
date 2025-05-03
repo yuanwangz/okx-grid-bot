@@ -387,6 +387,15 @@ class ExchangeClient:
             else:
                 formatted_amount = str(amount)
             
+            # 获取当前可用余额进行检查
+            balance = await self.fetch_balance()
+            available = float(balance.get('free', {}).get(asset, 0))
+            
+            # 检查余额是否足够
+            if available < float(formatted_amount):
+                self.logger.warning(f"申购余额不足: 请求申购 {formatted_amount} {asset}, 但可用余额仅有 {available} {asset}")
+                return {'code': '0', 'msg': 'Skipped due to insufficient balance', 'data': []}
+            
             params = {
                 'ccy': asset,
                 'amt': formatted_amount,
@@ -403,6 +412,10 @@ class ExchangeClient:
                     self.logger.warning(f"模拟交易模式不支持理财功能，忽略错误")
                     # 模拟成功，避免后续错误
                     return {'code': '0', 'msg': 'Simulated success in demo mode', 'data': []}
+                elif result.get('code') == '58350':
+                    self.logger.warning(f"余额不足(58350): 尝试申购 {formatted_amount} {asset}, 但交易所报告余额不足")
+                    # 返回一个表示特定错误的结果，但不抛出异常中断流程
+                    return {'code': '58350', 'msg': 'Insufficient balance reported by exchange', 'data': []}
                 else:
                     raise Exception(f"申购API返回错误: {result}")
             else:
@@ -423,6 +436,11 @@ class ExchangeClient:
                 # 模拟成功，避免中断交易流程
                 return {'code': '0', 'msg': 'Simulated success in demo mode', 'data': []}
             
+            # 判断是否是余额不足错误
+            if 'Insufficient balance' in str(e) or '58350' in str(e):
+                self.logger.warning(f"余额不足错误: 请求申购 {formatted_amount} {asset}, 但交易所报告余额不足")
+                return {'code': '58350', 'msg': 'Insufficient balance reported by exchange', 'data': []}
+                
             raise Exception(error_msg)
 
     async def fetch_my_trades(self, symbol, limit=10):
