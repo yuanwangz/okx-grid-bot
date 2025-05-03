@@ -454,16 +454,46 @@ async def handle_log(request):
                         const data = await response.json();
                         
                         // 更新价格信息
-                        document.getElementById('base-price').textContent = data.base_price.toFixed(4);
-                        document.getElementById('current-price').textContent = data.current_price.toFixed(4);
-                        document.getElementById('s1-high').textContent = data.s1_high ? data.s1_high.toFixed(4) : '--';
-                        document.getElementById('s1-low').textContent = data.s1_low ? data.s1_low.toFixed(4) : '--';
+                        const formatPrice = (price) => {{
+                            // 直接使用科学计数法转换为字符串
+                            const priceStr = price.toString();
+                            
+                            // 检查是否为科学计数法表示
+                            if (priceStr.includes('e-')) {{
+                                // 科学计数法，需要精确显示
+                                // 对于像 1.617e-10 这样的数字，我们需要完整显示
+                                const [mantissa, exponent] = priceStr.split('e-');
+                                const exponentNum = parseInt(exponent, 10);
+                                
+                                // 将小数点移动到正确位置
+                                let result = '0.';
+                                for (let i = 1; i < exponentNum; i++) {{
+                                    result += '0';
+                                }}
+                                
+                                // 添加尾数部分（去掉小数点）
+                                result += mantissa.replace('.', '');
+                                return result;
+                            }} else if (price < 0.0001) {{
+                                // 非常小但不是科学计数法表示的数字
+                                // 显示至少8位小数
+                                return price.toFixed(10).replace(/0+$/, '');
+                            }}
+                            
+                            // 标准价格，使用4位小数
+                            return price.toFixed(4);
+                        }};
+
+                        document.getElementById('base-price').textContent = formatPrice(data.base_price);
+                        document.getElementById('current-price').textContent = formatPrice(data.current_price);
+                        document.getElementById('s1-high').textContent = data.s1_high ? formatPrice(data.s1_high) : '--';
+                        document.getElementById('s1-low').textContent = data.s1_low ? formatPrice(data.s1_low) : '--';
                         document.getElementById('position-percentage').textContent = data.position_percentage.toFixed(2) + '%';
                         
                         // 更新网格信息
                         document.getElementById('grid-size').textContent = data.grid_size.toFixed(2) + '%';
-                        document.getElementById('grid-upper-band').textContent = data.upper_band.toFixed(4);
-                        document.getElementById('grid-lower-band').textContent = data.lower_band.toFixed(4);
+                        document.getElementById('grid-upper-band').textContent = formatPrice(data.upper_band);
+                        document.getElementById('grid-lower-band').textContent = formatPrice(data.lower_band);
                         document.getElementById('threshold').textContent = data.threshold.toFixed(4) + '%';
                         document.getElementById('target-order-amount').textContent = data.target_order_amount.toFixed(2) + ' USDT';
                         
@@ -502,7 +532,7 @@ async def handle_log(request):
                                     <td class="py-2 ${{trade.side === 'buy' ? 'text-green-500' : 'text-red-500'}}">
                                         ${{trade.side === 'buy' ? '买入' : '卖出'}}
                                     </td>
-                                    <td class="py-2">${{parseFloat(trade.price).toFixed(4)}}</td>
+                                    <td class="py-2">${{formatPrice(parseFloat(trade.price))}}</td>
                                     <td class="py-2">${{parseFloat(trade.amount).toFixed(4)}}</td>
                                     <td class="py-2">${{(parseFloat(trade.price) * parseFloat(trade.amount)).toFixed(2)}}</td>
                                     <td class="py-2 ${{parseFloat(trade.profit) >= 0 ? 'text-green-500' : 'text-red-500'}}">
