@@ -1034,7 +1034,7 @@ class GridTrader:
         """获取当前价格在历史中的分位位置"""
         try:
             # 获取过去7天价格数据（使用4小时K线）
-            ohlcv = await self.exchange.fetch_ohlcv(self.config.SYMBOL, '4h', limit=42)  # 42根4小时K线 ≈ 7天
+            ohlcv = await self.exchange.fetch_ohlcv(self.config.SYMBOL, '4H', limit=42)  # 42根4小时K线 ≈ 7天
             closes = [candle[4] for candle in ohlcv]
             current_price = await self._get_latest_price()
             
