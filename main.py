@@ -47,7 +47,7 @@ async def main():
     except Exception as e:
         error_msg = f"启动失败: {str(e)}\n{traceback.format_exc()}"
         logging.error(error_msg)
-        send_notification(error_msg, "致命错误")
+        await send_notification(error_msg, "致命错误")
         
     finally:
         if 'trader' in locals():

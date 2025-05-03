@@ -6,6 +6,38 @@ class AdvancedRiskManager:
     def __init__(self, trader):
         self.trader = trader
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+    def _format_crypto_price(self, price):
+        """格式化加密货币价格，保留足够精度并避免科学计数法"""
+        if price is None:
+            return "N/A"
+        
+        # 计算适合的小数位数
+        if price == 0:
+            return "0.00000000"
+            
+        # 对于非常小的价格，自动计算所需精度
+        if abs(price) < 0.0001:
+            # 找到第一个非零数字的位置
+            temp = abs(price)
+            count = 0
+            while temp < 1:
+                temp *= 10
+                count += 1
+                
+            # 至少保留该精度后3位
+            precision = max(count + 3, 10)
+            return f"{price:.{precision}f}"
+        
+        # 常规价格处理
+        elif abs(price) < 0.01:
+            return f"{price:.8f}"
+        elif abs(price) < 1:
+            return f"{price:.6f}"
+        elif abs(price) < 1000:
+            return f"{price:.4f}"
+        else:
+            return f"{price:.2f}"
     
     async def multi_layer_check(self):
         try:
@@ -66,12 +98,27 @@ class AdvancedRiskManager:
                 return 0
                 
             ratio = position_value / total_assets
+            
+            # 获取当前币价和币种余额，用于日志
+            current_price = self.trader.current_price
+            price_formatted = self._format_crypto_price(current_price)
+            
+            # 获取币种余额
+            base_symbol = self.trader.symbol_info['base']
+            base_amount = (
+                float(balance.get('free', {}).get(base_symbol, 0)) +
+                float(funding_balance.get(base_symbol, 0))
+            )
+            base_formatted = f"{base_amount:.8f}".rstrip('0').rstrip('.') if '.' in f"{base_amount:.8f}" else f"{base_amount:.8f}"
+            
             self.logger.debug(
                 f"仓位计算 | "
-                f"{self.trader.symbol_info['base']}价值: {position_value:.2f} USDT | "
+                f"{base_symbol}:{base_formatted}个, "
+                f"{base_symbol}价值: {position_value:.2f} USDT | "
                 f"USDT余额: {usdt_balance:.2f} | "
                 f"总资产: {total_assets:.2f} | "
-                f"仓位比例: {ratio:.2%}"
+                f"仓位比例: {ratio:.2%} | "
+                f"当前价格: {price_formatted}"
             )
             return ratio
         except Exception as e:

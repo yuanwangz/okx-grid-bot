@@ -89,22 +89,22 @@ class GridTrader:
             # 优先使用.env配置的基准价
             if self.config.INITIAL_BASE_PRICE > 0:
                 self.base_price = self.config.INITIAL_BASE_PRICE
-                self.logger.info(f"使用预设基准价: {self.base_price}")
+                self.logger.info(f"使用预设基准价: {self._format_price(self.base_price)}")
             else:
                 self.base_price = await self._get_latest_price()
-                self.logger.info(f"使用实时基准价: {self.base_price}")
+                self.logger.info(f"使用实时基准价: {self._format_price(self.base_price)}")
             
             if self.base_price is None:
                 raise ValueError("无法获取当前价格")
             
-            self.logger.info(f"初始化完成 | 交易对: {self.config.SYMBOL} | 基准价: {self.base_price}")
+            self.logger.info(f"初始化完成 | 交易对: {self.config.SYMBOL} | 基准价: {self._format_price(self.base_price)}")
             
             # 发送启动通知
             threshold = FLIP_THRESHOLD(self.grid_size)  # 计算实际阈值
-            send_notification(
+            await send_notification(
                 f"网格交易启动成功\n"
                 f"交易对: {self.config.SYMBOL}\n"
-                f"基准价: {self.base_price} USDT\n"
+                f"基准价: {self._format_price(self.base_price)} USDT\n"
                 f"网格大小: {self.grid_size}%\n"
                 f"触发阈值: {threshold*100}% (网格大小的1/5)"
             )
@@ -113,7 +113,7 @@ class GridTrader:
             market_price = await self._get_latest_price()
             price_diff = (market_price - self.base_price) / self.base_price * 100
             self.logger.info(
-                f"市场当前价: {market_price:.4f} | "
+                f"市场当前价: {self._format_price(market_price)} | "
                 f"价差: {price_diff:+.2f}%"
             )
 
@@ -440,11 +440,11 @@ class GridTrader:
             open_orders = await self.exchange.fetch_open_orders(self.config.SYMBOL)
             for order in open_orders:
                 await self.exchange.cancel_order(order['id'])
-            send_notification("程序紧急停止", "系统通知")
+            await send_notification("程序紧急停止", "系统通知")
             self.logger.critical("所有交易已停止，进入复盘程序")
         except Exception as e:
             self.logger.error(f"紧急停止失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
-            send_notification(f"程序异常停止: {str(e)}", "错误通知")
+            await send_notification(f"程序异常停止: {str(e)}", "错误通知")
         finally:
             await self.exchange.close()
             exit()
@@ -500,7 +500,7 @@ class GridTrader:
 
                 self.logger.info(
                     f"尝试第 {retry_count + 1}/{max_retries} 次 {side} 单 | "
-                    f"价格: {order_price} | "
+                    f"价格: {self._format_price(order_price)} | "
                     f"金额: {amount_usdt:.2f} USDT | "
                     f"数量: {amount:.8f} OKB"
                 )
@@ -553,7 +553,7 @@ class GridTrader:
                     # 更新总资产信息
                     await self._update_total_assets()
                     
-                    self.logger.info(f"基准价已更新: {self.base_price}")
+                    self.logger.info(f"基准价已更新: {self._format_price(self.base_price)}")
                     
                     # 发送通知
                     # 使用更清晰的格式发送交易成功消息
@@ -573,7 +573,7 @@ class GridTrader:
                         retry_count=(retry_count + 1, max_retries)
                     )
                     
-                    send_notification(message, "交易成功通知")
+                    await send_notification(message, "交易成功通知")
                     
                     # 交易完成后，检查并转移多余资金到理财
                     await self._transfer_excess_funds()
@@ -606,7 +606,7 @@ class GridTrader:
                             self.last_trade_time = time.time()
                             self.last_trade_price = float(check_order['price'])
                             await self._update_total_assets()
-                            self.logger.info(f"基准价已更新: {self.base_price}")
+                            self.logger.info(f"基准价已更新: {self._format_price(self.base_price)}")
                             
                             # 使用更清晰的格式发送交易成功消息
                             trade_side = 'buy' if side == 'buy' else 'sell'
@@ -625,7 +625,7 @@ class GridTrader:
                                 retry_count=(retry_count + 1, max_retries)
                             )
                             
-                            send_notification(message, "交易成功通知")
+                            await send_notification(message, "交易成功通知")
                             
                             # 交易完成后，检查并转移多余资金到理财
                             await self._transfer_excess_funds()
@@ -671,7 +671,7 @@ class GridTrader:
 📊 交易对: {self.config.SYMBOL}
 ⚠️ 错误: 资金不足
 """
-                    send_notification(error_message, "交易错误通知")
+                    await send_notification(error_message, "交易错误通知")
                     return False
                 
                 # 如果还有重试次数，稍等后继续
@@ -688,7 +688,7 @@ class GridTrader:
 📊 交易对: {self.config.SYMBOL}
 ⚠️ 错误: 达到最大重试次数 {max_retries} 次
 """
-            send_notification(error_message, "交易错误通知")
+            await send_notification(error_message, "交易错误通知")
         
         return False
 
@@ -782,7 +782,7 @@ class GridTrader:
                 total=total,
                 grid_size=self.grid_size
             )
-            send_notification(message, "交易执行通知")
+            asyncio.create_task(send_notification(message, "交易执行通知"))
         except Exception as e:
             self.logger.error(f"记录订单失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
 
@@ -829,15 +829,15 @@ class GridTrader:
                         # 更新最后成交信息
                         self.last_trade_price = order['price']
                         self.last_trade_time = current_time
-                        self.logger.info(f"订单已成交 | ID: {order_id} | 价格: {order['price']} | 基准价从 {old_base_price} 更新为 {self.base_price}")
+                        self.logger.info(f"订单已成交 | ID: {order_id} | 价格: {self._format_price(order['price'])} | 基准价从 {self._format_price(old_base_price)} 更新为 {self._format_price(self.base_price)}")
                         # 清除活跃订单标记
                         for side, active_id in self.active_orders.items():
                             if active_id == order_id:
                                 self.active_orders[side] = None
                         # 发送成交通知
-                        send_notification(
+                        await send_notification(
                             f"OKB {{'买入' if side == 'buy' else '卖出'}}单成交\\n"
-                            f"价格: {order['price']} USDT"
+                            f"价格: {self._format_price(order['price'])} USDT"
                         )
                     elif order['status'] == 'open':
                         # 取消未成交订单
@@ -1151,7 +1151,7 @@ class GridTrader:
             if price_diff >= flip_threshold:
                 # 智能预划转资金
                 await self._pre_transfer_funds(current_price)
-                self.logger.info(f"价格偏离阈值 | 当前价: {current_price} | 基准价: {self.base_price}")
+                self.logger.info(f"价格偏离阈值 | 当前价: {self._format_price(current_price)} | 基准价: {self._format_price(self.base_price)}")
                 return True
         except Exception as e:
             self.logger.error(f"翻转信号检查失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
@@ -1522,7 +1522,7 @@ class GridTrader:
                            f"现货余额: {spot_usdt:.2f}\\n理财余额: {funding_usdt:.2f}\\n" \
                            f"缺口: {amount_usdt - (spot_usdt + funding_usdt):.2f}"
                 self.logger.error(f"买入资金不足: 现货+理财总额不足以执行交易")
-                send_notification(error_msg, "资金不足警告")
+                await send_notification(error_msg, "资金不足警告")
                 return False
                 
             # 计算需要赎回的金额（增加5%缓冲）
@@ -1552,12 +1552,12 @@ class GridTrader:
             else:
                 error_msg = f"资金赎回后仍不足\\n交易类型: 买入\\n所需USDT: {amount_usdt:.2f}\\n现货余额: {new_usdt:.2f}"
                 self.logger.error(error_msg)
-                send_notification(error_msg, "资金不足警告")
+                await send_notification(error_msg, "资金不足警告")
                 return False
                 
         except Exception as e:
             self.logger.error(f"检查买入余额失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
-            send_notification(f"余额检查错误\\n交易类型: 买入\\n错误信息: {str(e)}", "系统错误")
+            await send_notification(f"余额检查错误\\n交易类型: 买入\\n错误信息: {str(e)}", "系统错误")
             return False
             
     async def check_sell_balance(self):
@@ -1594,7 +1594,7 @@ class GridTrader:
                     # 发送资金不足通知
                     error_msg = f"资金不足通知\\n交易类型: 卖出\\n所需{self.symbol_info['base']}: {coin_needed:.8f}\\n" \
                                f"现货余额: {spot_okb:.8f}\\n理财余额: {funding_okb:.8f}"
-                    send_notification(error_msg, "余额不足")
+                    await send_notification(error_msg, "余额不足")
                     return False
                 
                 # 计算需要从理财赎回的数量，考虑手续费和划转最低限额
@@ -1626,7 +1626,7 @@ class GridTrader:
                         return True
                     else:
                         error_msg = f"资金赎回后仍不足\\n交易类型: 卖出\\n所需{self.symbol_info['base']}: {coin_needed:.8f}\\n现货余额: {new_okb:.8f}"
-                        send_notification(error_msg, "余额不足")
+                        await send_notification(error_msg, "余额不足")
                         return False
                 except Exception as e:
                     self.logger.error(f"从理财赎回{self.symbol_info['base']}失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
@@ -1660,7 +1660,7 @@ class GridTrader:
                 retry_count=retry_count
             )
             
-            send_notification(message, "交易执行通知")
+            await send_notification(message, "交易执行通知")
             
             return order
         except Exception as e:
@@ -1668,27 +1668,31 @@ class GridTrader:
             raise
 
     def _format_price(self, price):
-        """根据价格大小动态调整显示精度"""
+        """格式化价格，避免科学计数法，保留足够精度"""
         if price is None:
             return "N/A"
-        
-        if price < 0.00000001:  # 极小值，如1e-8级别
-            return f"{price:.16f}"
-        elif price < 0.0000001:  # 1e-7级别
-            return f"{price:.14f}"
-        elif price < 0.000001:   # 1e-6级别
-            return f"{price:.12f}"
-        elif price < 0.00001:    # 1e-5级别
-            return f"{price:.10f}"
-        elif price < 0.0001:     # 1e-4级别
+            
+        # 如果价格非常小（小于0.0001），使用更多小数位
+        if abs(price) < 0.0001:
+            # 计算需要的小数位数
+            precision = 10  # 默认至少10位
+            
+            # 如果非常小的数，找到第一个非零数字并多显示3位
+            if price != 0:
+                temp_price = abs(price)
+                count = 0
+                while temp_price < 1:
+                    temp_price *= 10
+                    count += 1
+                precision = max(count + 3, precision)
+                
+            # 使用f-string并指定精度，确保不使用科学计数法
+            return f"{price:.{precision}f}"
+        elif abs(price) < 0.01:
             return f"{price:.8f}"
-        elif price < 0.001:      # 1e-3级别
-            return f"{price:.7f}"
-        elif price < 0.01:       # 1e-2级别
+        elif abs(price) < 1:
             return f"{price:.6f}"
-        elif price < 0.1:        # 1e-1级别
-            return f"{price:.5f}"
-        elif price < 1:          # 1级别
+        elif abs(price) < 1000:
             return f"{price:.4f}"
-        else:                    # >1
+        else:
             return f"{price:.2f}"
