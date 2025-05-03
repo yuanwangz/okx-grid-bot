@@ -4,8 +4,8 @@ import logging
 
 load_dotenv()
 
-BASE_SYMBOL = 'OKB'  # 基础币种
-QUOTE_SYMBOL = 'USDT'  # 计价币种
+BASE_SYMBOL = os.getenv('BASE_SYMBOL', 'OKB')  # 从环境变量读取，默认OKB
+QUOTE_SYMBOL = os.getenv('QUOTE_SYMBOL', 'USDT')  # 从环境变量读取，默认USDT
 SYMBOL = f"{BASE_SYMBOL}-{QUOTE_SYMBOL}"  # OKX使用-而不是/作为分隔符
 BASE_CURRENCY = BASE_SYMBOL
 
