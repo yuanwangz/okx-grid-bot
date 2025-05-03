@@ -131,12 +131,13 @@ class GridTrader:
                         formatted_trade = {
                             'timestamp': int(trade['uTime']) / 1000, # ms to s
                             'side': trade['side'],
-                            'price': float(trade['fillPx']),
-                            'amount': float(trade['sz']),
-                            'cost': float(trade['fillSz']) * float(trade['fillPx']), # 保留原始 cost
+                            'price': float(trade['fillPx'] if trade['fillPx'] != '' else '0'), 
+                            'amount': float(trade['sz'] if trade['sz'] != '' else '0'),
+                            'cost': float(trade.get('fillSz', '0') if trade.get('fillSz', '') != '' else '0') * 
+                                   float(trade.get('fillPx', '0') if trade.get('fillPx', '') != '' else '0'),
                             # 'fee': trade.get('fee', {}).get('cost', 0), # 提取手续费
                             'fee': 0, # 提取手续费
-                            'order_id': trade.get('ordId'), # 关联订单ID
+                            'order_id': trade.get('ordId', ''), # 关联订单ID
                             'profit': 0 # 初始化时设为0，或者后续计算
                         }
                         formatted_trades.append(formatted_trade)
@@ -581,7 +582,7 @@ class GridTrader:
                     return updated_order
                 
                 # 如果订单未成交，取消订单并重试
-                self.logger.warning(f"订单未成交，尝试取消 | ID: {order_id} | 状态: {updated_order['status']}")
+                self.logger.warning(f"订单未成交，尝试取消 | ID: {order_id} | 状态: {updated_order['state']}")
                 try:
                     await self.exchange.cancel_order(order_id, self.config.SYMBOL)
                     self.logger.info(f"订单已取消，准备重试 | ID: {order_id}")
@@ -590,7 +591,7 @@ class GridTrader:
                     self.logger.warning(f"取消订单时出错: {str(e)}，再次检查订单状态")
                     try:
                         check_order = await self.exchange.fetch_order(order_id, self.config.SYMBOL)
-                        if check_order['status'] == 'closed':
+                        if check_order['state'] == 'filled':
                             self.logger.info(f"订单已经成交 | ID: {order_id}")
                             # 处理已成交的订单（与上面相同的逻辑）
                             self.base_price = float(check_order['avgPx'])
@@ -1035,18 +1036,23 @@ class GridTrader:
         try:
             # 获取过去7天价格数据（使用4小时K线）
             ohlcv = await self.exchange.fetch_ohlcv(self.config.SYMBOL, '4H', limit=42)  # 42根4小时K线 ≈ 7天
-            closes = [candle[4] for candle in ohlcv]
+            # 确保所有价格都是浮点数
+            closes = [float(candle[4]) if candle[4] != '' else 0.0 for candle in ohlcv]
             current_price = await self._get_latest_price()
             
             # 计算分位值
             sorted_prices = sorted(closes)
-            lower = sorted_prices[int(len(sorted_prices)*0.25)]  # 25%分位
-            upper = sorted_prices[int(len(sorted_prices)*0.75)]  # 75%分位
+            if not sorted_prices:
+                self.logger.warning("无有效价格数据，无法计算分位")
+                return 0.5  # 返回默认中间值
+                
+            lower = float(sorted_prices[int(len(sorted_prices)*0.25)])  # 25%分位
+            upper = float(sorted_prices[int(len(sorted_prices)*0.75)])  # 75%分位
             
             # 添加数据有效性检查
             if len(sorted_prices) < 10:  # 当数据不足时使用更宽松的判断
                 self.logger.warning("历史数据不足，使用简化分位计算")
-                mid_price = (sorted_prices[0] + sorted_prices[-1]) / 2
+                mid_price = (float(sorted_prices[0]) + float(sorted_prices[-1])) / 2
                 return 0.5 if current_price >= mid_price else 0.0
             
             # 计算当前价格位置

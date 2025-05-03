@@ -44,7 +44,7 @@ class PositionControllerS1:
             limit = self.s1_lookback + 2
             klines = await self.trader.exchange.fetch_ohlcv(
                 self.trader.symbol, 
-                timeframe='1D',
+                timeframe='1D',  # 使用大写'D'
                 limit=limit
             )
 
@@ -60,12 +60,24 @@ class PositionControllerS1:
                  self.logger.warning(f"S1: Not enough relevant klines ({len(relevant_klines)}) for lookback {self.s1_lookback}.")
                  return False
 
-            # 计算高低点 (索引 2 是 high, 3 是 low)
-            self.s1_daily_high = max(float(k[2]) for k in relevant_klines)
-            self.s1_daily_low = min(float(k[3]) for k in relevant_klines)
-            self.s1_last_data_update_ts = time.time()
-            self.logger.info(f"S1 Levels Updated: High={self.s1_daily_high:.4f}, Low={self.s1_daily_low:.4f}")
-            return True
+            # 计算高低点 (索引 2 是 high, 3 是 low)，确保数据转换为浮点型
+            try:
+                # 过滤掉空值，并确保转换为浮点数
+                highs = [float(k[2]) for k in relevant_klines if k[2] != '']
+                lows = [float(k[3]) for k in relevant_klines if k[3] != '']
+                
+                if not highs or not lows:
+                    self.logger.warning("S1: Empty high/low data in klines")
+                    return False
+                    
+                self.s1_daily_high = max(highs)
+                self.s1_daily_low = min(lows)
+                self.s1_last_data_update_ts = time.time()
+                self.logger.info(f"S1 Levels Updated: High={self.s1_daily_high:.4f}, Low={self.s1_daily_low:.4f}")
+                return True
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"S1: Error processing kline data: {e}")
+                return False
 
         except Exception as e:
             self.logger.error(f"S1: Failed to fetch or calculate daily levels: {e}", exc_info=False)
