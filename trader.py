@@ -191,17 +191,17 @@ class GridTrader:
                 self.lowest = new_lowest
                 self.logger.info(
                     f"买入监测 | "
-                    f"当前价: {current_price:.2f} | "
-                    f"触发价: {self._get_lower_band():.5f} | "
-                    f"最低价: {self.lowest:.2f} | "
-                    f"网格下限: {self._get_lower_band():.2f} | "
+                    f"当前价: {self._format_price(current_price)} | "
+                    f"触发价: {self._format_price(self._get_lower_band())} | "
+                    f"最低价: {self._format_price(self.lowest)} | "
+                    f"网格下限: {self._format_price(self._get_lower_band())} | "
                     f"反弹阈值: {FLIP_THRESHOLD(self.grid_size)*100:.2f}%"
                 )
             threshold = FLIP_THRESHOLD(self.grid_size)
             # 从最低价反弹指定比例时触发买入
             if self.lowest and current_price >= self.lowest * (1 + threshold):
                 self.buying_or_selling = False # 不在买入或卖出
-                self.logger.info(f"触发买入信号 | 当前价: {current_price:.2f} | 已反弹: {(current_price/self.lowest-1)*100:.2f}%")
+                self.logger.info(f"触发买入信号 | 当前价: {self._format_price(current_price)} | 已反弹: {(current_price/self.lowest-1)*100:.2f}%")
                 # 检查买入余额是否充足
                 if not await self.check_buy_balance(current_price):
                     return False
@@ -229,15 +229,15 @@ class GridTrader:
                 
                 self.logger.info(
                     f"卖出监测 | "
-                    f"当前价: {current_price:.2f} | "
-                    f"触发价(动态): {dynamic_trigger_price:.5f} | "
-                    f"最高价: {self.highest:.2f}"
+                    f"当前价: {self._format_price(current_price)} | "
+                    f"触发价(动态): {self._format_price(dynamic_trigger_price)} | "
+                    f"最高价: {self._format_price(self.highest)}"
                 )
                 
             # 从最高价下跌指定比例时触发卖出
             if self.highest and current_price <= self.highest * (1 - threshold):
                 self.buying_or_selling = False # 不在买入或卖出
-                self.logger.info(f"触发卖出信号 | 当前价: {current_price:.2f} | 目标价: {self.highest * (1 - threshold):.5f} | 已下跌: {(1-current_price/self.highest)*100:.2f}%")
+                self.logger.info(f"触发卖出信号 | 当前价: {self._format_price(current_price)} | 目标价: {self._format_price(self.highest * (1 - threshold))} | 已下跌: {(1-current_price/self.highest)*100:.2f}%")
                 # 检查卖出余额是否充足
                 if not await self.check_sell_balance():
                     return False
@@ -1666,3 +1666,17 @@ class GridTrader:
         except Exception as e:
             self.logger.error(f"执行交易失败: {str(e)} | 堆栈信息: {traceback.format_exc()}")
             raise
+
+    def _format_price(self, price):
+        """根据价格大小动态调整显示精度"""
+        if price is None:
+            return "N/A"
+        
+        if price < 0.0001:
+            return f"{price:.8f}"
+        elif price < 0.01:
+            return f"{price:.6f}"
+        elif price < 1:
+            return f"{price:.4f}"
+        else:
+            return f"{price:.2f}"
