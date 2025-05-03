@@ -1059,18 +1059,21 @@ class GridTrader:
         try:
             # 获取过去7天价格数据（使用4小时K线）
             ohlcv = await self.exchange.fetch_ohlcv(self.config.SYMBOL, '4H', limit=42)  # 42根4小时K线 ≈ 7天
-            closes = [candle[4] for candle in ohlcv]
+            # 确保所有价格都是浮点数
+            closes = [float(candle[4]) for candle in ohlcv]
             current_price = await self._get_latest_price()
             
             # 计算分位值
             sorted_prices = sorted(closes)
-            lower = sorted_prices[int(len(sorted_prices)*0.25)]  # 25%分位
-            upper = sorted_prices[int(len(sorted_prices)*0.75)]  # 75%分位
+            lower = float(sorted_prices[int(len(sorted_prices)*0.25)])  # 25%分位
+            upper = float(sorted_prices[int(len(sorted_prices)*0.75)])  # 75%分位
+            
+            self.logger.debug(f"价格分位计算 - 当前: {self._format_price(current_price)}, 下限(25%): {self._format_price(lower)}, 上限(75%): {self._format_price(upper)}")
             
             # 添加数据有效性检查
             if len(sorted_prices) < 10:  # 当数据不足时使用更宽松的判断
                 self.logger.warning("历史数据不足，使用简化分位计算")
-                mid_price = (sorted_prices[0] + sorted_prices[-1]) / 2
+                mid_price = (float(sorted_prices[0]) + float(sorted_prices[-1])) / 2
                 return 0.5 if current_price >= mid_price else 0.0
             
             # 计算当前价格位置
