@@ -1672,11 +1672,23 @@ class GridTrader:
         if price is None:
             return "N/A"
         
-        if price < 0.0001:
+        if price < 0.00000001:  # 极小值，如1e-8级别
+            return f"{price:.16f}"
+        elif price < 0.0000001:  # 1e-7级别
+            return f"{price:.14f}"
+        elif price < 0.000001:   # 1e-6级别
+            return f"{price:.12f}"
+        elif price < 0.00001:    # 1e-5级别
+            return f"{price:.10f}"
+        elif price < 0.0001:     # 1e-4级别
             return f"{price:.8f}"
-        elif price < 0.01:
+        elif price < 0.001:      # 1e-3级别
+            return f"{price:.7f}"
+        elif price < 0.01:       # 1e-2级别
             return f"{price:.6f}"
-        elif price < 1:
+        elif price < 0.1:        # 1e-1级别
+            return f"{price:.5f}"
+        elif price < 1:          # 1级别
             return f"{price:.4f}"
-        else:
+        else:                    # >1
             return f"{price:.2f}"
